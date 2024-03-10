@@ -1,4 +1,4 @@
-# bot.py
+# Thanks to <a href="https://www.flaticon.com/free-icons/time" title="time icons">Time icons created by Freepik - Flaticon</a> for the hourglass icon
 import os
 
 import discord
@@ -21,10 +21,6 @@ bot = commands.Bot(command_prefix='/', intents=intents)
 async def on_ready():
     print(f'{bot.user} has connected to Discord!')
 
-# @bot.command()
-# async def alarm(ctx):
-#     await ctx.send("@everyone")
-
 @bot.command()
 async def alarm(ctx, command = None, time = None):
     if (command == time == None):
@@ -34,7 +30,8 @@ async def alarm(ctx, command = None, time = None):
         if (command.lower() == "set"):
             valid_time_found = re.search("^([0-9]|0[0-9]|1[0-9]|2[0-3]):[0-5][0-9]$", time)
             if (valid_time_found != None):
-                await ctx.send("I want to set an alarm at "+str(valid_time_found.group(0)))
+                alarm_time_to_set = valid_time_found.group(0) if len(valid_time_found.group(0)) == 5 else "0"+valid_time_found.group(0)
+                await ctx.send(f"I want to set an alarm at {alarm_time_to_set}")
             else:
                 await sendError(ctx, 400, "Invalid time format. Please use the following format: \"/alarm set HH:MM\"")
 

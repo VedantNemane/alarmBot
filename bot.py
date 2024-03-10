@@ -29,13 +29,18 @@ async def on_ready():
 async def alarm(ctx, command = None, time = None):
     if (command == time == None):
         await ctx.send("@everyone")
-        pass
-    # Take time in 00:00 format
-    if (command.lower() == "set"):
-        valid_time_found = re.search("[0-2][0-9]:[0-5][0-9]", time)
-        if (valid_time_found != None):
-            await ctx.send("I want to set an alarm at: "+str(valid_time_found.group(0)))
-        
+    else:    
+        # Take time in 00:00 format
+        if (command.lower() == "set"):
+            valid_time_found = re.search("^([0-9]|0[0-9]|1[0-9]|2[0-3]):[0-5][0-9]$", time)
+            if (valid_time_found != None):
+                await ctx.send("I want to set an alarm at "+str(valid_time_found.group(0)))
+            else:
+                await sendError(ctx, 400, "Invalid time format. Please use the following format: \"/alarm set HH:MM\"")
+
+@bot.command()
+async def sendError(ctx, errorCode: int, errorMessage: str):
+    await ctx.send(f"Error [{errorCode}]: {errorMessage}")
 
 @bot.command()
 async def timezone(ctx):

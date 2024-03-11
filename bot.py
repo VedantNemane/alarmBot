@@ -25,6 +25,7 @@ bot_time_offset_from_utc = 0
 user_time_offset_from_bot = 0
 switched_on = True
 alarm_running = False
+task = None
 
 @bot.event
 async def on_ready():
@@ -32,7 +33,9 @@ async def on_ready():
 
 async def ping_everyone(ctx):
     global switched_on 
+    global alarm_running
     if (switched_on):
+        alarm_running = False
         await ctx.send("@everyone")
 
 @bot.command()
@@ -49,10 +52,13 @@ async def sendError(ctx, errorCode: int, errorMessage: str):
 
 async def setAlarm(ctx, seconds_to_sleep):
     global alarm_running
+    global task
     print(f"Setting alarm for {seconds_to_sleep} seconds.")
     alarm_running = True
-    await asyncio.sleep(seconds_to_sleep)
-    await ping_everyone(ctx)
+    task = asyncio.ensure_future(asyncio.sleep(seconds_to_sleep))
+    await task
+    if not task.cancelled():
+        await ping_everyone(ctx)
 
 def inputToDateTime(time):
     datetime_object = datetime.strptime(f"{datetime.now(timezone.utc).date()} {time}:00", '%Y-%m-%d %H:%M:%S')
@@ -76,14 +82,17 @@ async def time(ctx, command = None, time = None):
                 user_time_offset_from_bot = -(86400 - user_time_offset_from_bot)
             print(f"user time offset from bot = {user_time_offset_from_bot}")
         else:
-            sendError(ctx, 400, "Alarm not set. Please use the following 24-hour format and try again: \"/time set HH:MM\"")
+            await sendError(ctx, 400, "Alarm not set. Please use the following 24-hour format and try again: \"/time set HH:MM\"")
 
 
 @bot.command()
 async def alarm(ctx, command = None, time = None):
     global alarm_running
     global user_time_offset_from_bot
+    global task
     if (command == time == None):
+        alarm_running = False
+        task.cancel()
         await ping_everyone(ctx)
     else:
         if (command.lower() == "set" and not alarm_running):
@@ -96,8 +105,8 @@ async def alarm(ctx, command = None, time = None):
                     aware_time += timedelta(days=1)
                 await setAlarm(ctx, (aware_time - current_offset_time).seconds)
             else:
-                sendError(ctx, 400, "Alarm not set. Please use the following 24-hour format and try again: \"/alarm set HH:MM\"")
+                await sendError(ctx, 400, "Alarm not set. Please use the following 24-hour format and try again: \"/alarm set HH:MM\"")
         else:
-            sendError(ctx, 300, "Alarm not set. An alarm may already be in progress, please trigger it and retry.")
+            await sendError(ctx, 300, "Alarm not set. An alarm may already be in progress, please trigger it and retry.")
 
 bot.run(TOKEN)

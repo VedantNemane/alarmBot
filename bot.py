@@ -23,12 +23,8 @@ bot = commands.Bot(command_prefix='/', intents=intents)
 bot_time_offset_from_utc = 0
 
 user_time_offset_from_bot = 0
-
 switched_on = True
-
 alarm_running = False
-
-timezones = {}
 
 @bot.event
 async def on_ready():
@@ -65,72 +61,43 @@ def inputToDateTime(time):
 def validateTimeInput(input):
     return re.search("^([0-9]|0[0-9]|1[0-9]|2[0-3]):[0-5][0-9]$", input).group(0)
 
-# Currently broken, ignore
-# def createMapToTimezones():
-#     for tz in pytz.common_timezones:
-#         try:
-#             tz_obj = pytz.timezone(tz)
-#             abbrev = str(tz_obj.localize(datetime.now()).tzname())
-#             if (tz not in timezones):
-#                 timezones[tz] = tz_obj.localize(datetime.now()).tzinfo
-#         except:
-#             pass
-#     return
-
-async def displayTimeZones(ctx):
-    output = ""
-    for (key, value) in timezones.items():
-        output += f"\n{key}: {value}"
-        if (len(output) > 1000):
-            await ctx.send(output)
-            output = ""
-    await ctx.send(output)
-
-    # timezone_list = pytz.all_timezones if (timezone != None) else pytz.common_timezones
-    # output = ""
-    # char_count = 0
-    # for timeZone in pytz.all_timezones:
-    #     output += (f"\n{timeZone}")
-    #     char_count += len(str(timeZone))
-    #     if (char_count > 1000):
-    #         await ctx.send(output)
-    #         output = ""
-    #         char_count = 0
-    # await ctx.send(output)
-
-
 @bot.command()
 async def time(ctx, command = None, time = None):
+    global user_time_offset_from_bot
     if (command == time == None):
         local = datetime.now(timezone.utc)
-        await ctx.send(f"Current bot time: {str(local.time)}")
-    # elif (command.lower() == "display"):
-    #     await displayTimeZones(ctx)
+        await ctx.send(f"Current UTC time: {str(local.time)}")
     elif (command.lower() == "set"):
-        # set your current time here and the offset will automatically be calculated
-        # current time must be also entered in 24 hour format!!
         valid_time_found = validateTimeInput(time)
         if (valid_time_found):
             aware_timezone = inputToDateTime(valid_time_found).replace(tzinfo=timezone.utc)
             user_time_offset_from_bot = (aware_timezone - datetime.now(timezone.utc)).seconds
-            print(f"user time offset = {user_time_offset_from_bot}")
+            if user_time_offset_from_bot > 43200:
+                user_time_offset_from_bot = -(86400 - user_time_offset_from_bot)
+            print(f"user time offset from bot = {user_time_offset_from_bot}")
         else:
             sendError(ctx, 400, "Alarm not set. Please use the following 24-hour format and try again: \"/time set HH:MM\"")
 
 
 @bot.command()
 async def alarm(ctx, command = None, time = None):
+    global alarm_running
+    global user_time_offset_from_bot
     if (command == time == None):
-        await ctx.send("@everyone")
+        await ping_everyone(ctx)
     else:
-        if (command.lower() == "set"):
+        if (command.lower() == "set" and not alarm_running):
             valid_time_found = validateTimeInput(time)
             if (valid_time_found != None):
                 aware_time = inputToDateTime(valid_time_found).replace(tzinfo=timezone.utc)
-                if aware_time < datetime.now(timezone.utc):
+                current_offset_time = datetime.now(timezone.utc) + timedelta(seconds=user_time_offset_from_bot)
+                print(f"current offset time {current_offset_time}")
+                if aware_time < current_offset_time:
                     aware_time += timedelta(days=1)
-                await setAlarm(ctx, (aware_time - datetime.now(timezone.utc)).seconds)
+                await setAlarm(ctx, (aware_time - current_offset_time).seconds)
             else:
                 sendError(ctx, 400, "Alarm not set. Please use the following 24-hour format and try again: \"/alarm set HH:MM\"")
+        else:
+            sendError(ctx, 300, "Alarm not set. An alarm may already be in progress, please trigger it and retry.")
 
 bot.run(TOKEN)

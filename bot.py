@@ -19,9 +19,6 @@ intents.message_content = True
 
 bot = commands.Bot(command_prefix='/', intents=intents)
 
-# Time offset from base UTC in seconds
-bot_time_offset_from_utc = 0
-
 user_time_offset_from_bot = 0
 switched_on = True
 alarm_running = False
@@ -37,15 +34,6 @@ async def ping_everyone(ctx):
     if (switched_on):
         alarm_running = False
         await ctx.send("@everyone")
-
-@bot.command()
-async def toggle(ctx):
-    global switched_on
-    switched_on = False if (switched_on) else True
-    if (switched_on):
-        await ctx.send("The alarm has been toggled on!")
-    else:
-        await ctx.send("The alarm has been toggled off!")
 
 async def sendError(ctx, errorCode: int, errorMessage: str):
     await ctx.send(f"Error [{errorCode}]: {errorMessage}")
@@ -84,6 +72,14 @@ async def time(ctx, command = None, time = None):
         else:
             await sendError(ctx, 400, "Alarm not set. Please use the following 24-hour format and try again: \"/time set HH:MM\"")
 
+@bot.command()
+async def toggle(ctx):
+    global switched_on
+    switched_on = False if (switched_on) else True
+    if (switched_on):
+        await ctx.send("The alarm has been toggled on!")
+    else:
+        await ctx.send("The alarm has been toggled off!")
 
 @bot.command()
 async def alarm(ctx, command = None, time = None):

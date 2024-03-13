@@ -19,7 +19,7 @@ intents.message_content = True
 
 bot = commands.Bot(command_prefix='/', intents=intents)
 
-user_time_offset_from_bot = 0
+user_time_offset_from_utc = 0
 switched_on = True
 alarm_running = False
 task = None
@@ -57,7 +57,7 @@ def validateTimeInput(input):
 
 @bot.command()
 async def time(ctx, command = None, time = None):
-    global user_time_offset_from_bot
+    global user_time_offset_from_utc
     if (command == time == None):
         local = datetime.now(timezone.utc)
         await ctx.send(f"Current UTC time: {str(local.time)}")
@@ -65,10 +65,10 @@ async def time(ctx, command = None, time = None):
         valid_time_found = validateTimeInput(time)
         if (valid_time_found):
             aware_timezone = inputToDateTime(valid_time_found).replace(tzinfo=timezone.utc)
-            user_time_offset_from_bot = (aware_timezone - datetime.now(timezone.utc)).seconds
-            if user_time_offset_from_bot > 43200:
-                user_time_offset_from_bot = -(86400 - user_time_offset_from_bot)
-            print(f"user time offset from bot = {user_time_offset_from_bot}")
+            user_time_offset_from_utc = (aware_timezone - datetime.now(timezone.utc)).seconds
+            if user_time_offset_from_utc > 43200:
+                user_time_offset_from_utc = -(86400 - user_time_offset_from_utc)
+            print(f"user time offset from bot = {user_time_offset_from_utc}")
         else:
             await sendError(ctx, 400, "Alarm not set. Please use the following 24-hour format and try again: \"/time set HH:MM\"")
 
@@ -77,28 +77,36 @@ async def toggle(ctx):
     global switched_on
     switched_on = False if (switched_on) else True
     if (switched_on):
-        await ctx.send("The alarm has been toggled on!")
+        await ctx.send("Alarm toggled ON!")
     else:
-        await ctx.send("The alarm has been toggled off!")
+        await ctx.send("Alarm toggled OFF!")
 
 @bot.command()
 async def alarm(ctx, command = None, time = None):
     global alarm_running
-    global user_time_offset_from_bot
+    global user_time_offset_from_utc
     global task
     if (command == time == None):
         alarm_running = False
-        task.cancel()
-        await ping_everyone(ctx)
+        try:
+            task.cancel()
+            await ping_everyone(ctx)
+        except:
+            await ctx.send("No active alarm found to trigger.")
+        
     else:
         if (command.lower() == "set" and not alarm_running):
             valid_time_found = validateTimeInput(time)
             if (valid_time_found != None):
                 aware_time = inputToDateTime(valid_time_found).replace(tzinfo=timezone.utc)
-                current_offset_time = datetime.now(timezone.utc) + timedelta(seconds=user_time_offset_from_bot)
+                current_offset_time = datetime.now(timezone.utc) + timedelta(seconds=user_time_offset_from_utc)
                 print(f"current offset time {current_offset_time}")
                 if aware_time < current_offset_time:
                     aware_time += timedelta(days=1)
+
+                minutes, seconds = divmod((aware_time - current_offset_time).seconds, 60)
+                hours, minutes = divmod(minutes, 60)
+                await ctx.send("Alarm will trigger in %d hour(s) and %02d minute(s)" % (hours, minutes))
                 await setAlarm(ctx, (aware_time - current_offset_time).seconds)
             else:
                 await sendError(ctx, 400, "Alarm not set. Please use the following 24-hour format and try again: \"/alarm set HH:MM\"")

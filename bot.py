@@ -5,6 +5,7 @@ import discord
 import re
 import asyncio
 import pytz
+from multiprocessing import Process
 
 from discord.ext import commands
 from dotenv import load_dotenv
@@ -39,6 +40,12 @@ async def ping_everyone(ctx):
 async def sendError(ctx, errorCode: int, errorMessage: str):
     await ctx.send(f"Error [{errorCode}]: {errorMessage}")
 
+async def startCountdown(ctx):
+    global seconds
+    for remaining_time in range(seconds, 0, -1):
+        await asyncio.sleep(1)
+        seconds -= 1
+
 async def setAlarm(ctx, seconds_to_sleep):
     global alarm_running
     global task
@@ -46,18 +53,19 @@ async def setAlarm(ctx, seconds_to_sleep):
 
     seconds = seconds_to_sleep
 
-    await countdown(ctx)
     print(f"Setting alarm for {seconds_to_sleep} seconds.")
     alarm_running = True
     task = asyncio.ensure_future(asyncio.sleep(seconds_to_sleep))
-    await task
-
-    while seconds > 0:
-        seconds -= 1
-        await asyncio.sleep(1)
+    
+    await countdown(ctx)
+    await asyncio.gather(
+        task,
+        startCountdown(ctx)
+    )
     
     if not task.cancelled():
         await ping_everyone(ctx)
+    alarm_running = False
 
 def inputToDateTime(time):
     datetime_object = datetime.strptime(f"{datetime.now(timezone.utc).date()} {time}:00", '%Y-%m-%d %H:%M:%S')
@@ -122,10 +130,9 @@ async def alarm(ctx, command = None, time = None):
 
 @bot.command()
 async def countdown(ctx):
-    print("In countdown :) ")
     global seconds
     if (seconds != None and seconds > 0):
-
+        print(f"In countdown with {seconds} seconds left.")
         minutes, _ = divmod(seconds, 60)
         hours, minutes = divmod(minutes, 60)
 

@@ -5,6 +5,7 @@ import discord
 import re
 import asyncio
 import pytz
+from multiprocessing import Process
 
 from discord.ext import commands
 from dotenv import load_dotenv
@@ -23,6 +24,7 @@ user_time_offset_from_utc = 0
 switched_on = True
 alarm_running = False
 task = None
+seconds = None
 
 @bot.event
 async def on_ready():
@@ -38,15 +40,32 @@ async def ping_everyone(ctx):
 async def sendError(ctx, errorCode: int, errorMessage: str):
     await ctx.send(f"Error [{errorCode}]: {errorMessage}")
 
+async def startCountdown(ctx):
+    global seconds
+    for remaining_time in range(seconds, 0, -1):
+        await asyncio.sleep(1)
+        seconds -= 1
+
 async def setAlarm(ctx, seconds_to_sleep):
     global alarm_running
     global task
+    global seconds
+
+    seconds = seconds_to_sleep
+
     print(f"Setting alarm for {seconds_to_sleep} seconds.")
     alarm_running = True
     task = asyncio.ensure_future(asyncio.sleep(seconds_to_sleep))
-    await task
+    
+    await countdown(ctx)
+    await asyncio.gather(
+        task,
+        startCountdown(ctx)
+    )
+    
     if not task.cancelled():
         await ping_everyone(ctx)
+    alarm_running = False
 
 def inputToDateTime(time):
     datetime_object = datetime.strptime(f"{datetime.now(timezone.utc).date()} {time}:00", '%Y-%m-%d %H:%M:%S')
@@ -68,7 +87,6 @@ async def time(ctx, command = None, time = None):
             user_time_offset_from_utc = (aware_timezone - datetime.now(timezone.utc)).seconds
             if user_time_offset_from_utc > 43200:
                 user_time_offset_from_utc = -(86400 - user_time_offset_from_utc)
-            print(f"user time offset from bot = {user_time_offset_from_utc}")
         else:
             await sendError(ctx, 400, "Alarm not set. Please use the following 24-hour format and try again: \"/time set HH:MM\"")
 
@@ -77,9 +95,9 @@ async def toggle(ctx):
     global switched_on
     switched_on = False if (switched_on) else True
     if (switched_on):
-        await ctx.send("Alarm toggled ON!")
+        await ctx.send("Alarm toggled on.")
     else:
-        await ctx.send("Alarm toggled OFF!")
+        await ctx.send("Alarm toggled off.")
 
 @bot.command()
 async def alarm(ctx, command = None, time = None):
@@ -100,17 +118,37 @@ async def alarm(ctx, command = None, time = None):
             if (valid_time_found != None):
                 aware_time = inputToDateTime(valid_time_found).replace(tzinfo=timezone.utc)
                 current_offset_time = datetime.now(timezone.utc) + timedelta(seconds=user_time_offset_from_utc)
-                print(f"current offset time {current_offset_time}")
+
                 if aware_time < current_offset_time:
                     aware_time += timedelta(days=1)
 
-                minutes, seconds = divmod((aware_time - current_offset_time).seconds, 60)
-                hours, minutes = divmod(minutes, 60)
-                await ctx.send("Alarm will trigger in %d hour(s) and %02d minute(s)" % (hours, minutes))
                 await setAlarm(ctx, (aware_time - current_offset_time).seconds)
             else:
                 await sendError(ctx, 400, "Alarm not set. Please use the following 24-hour format and try again: \"/alarm set HH:MM\"")
         else:
             await sendError(ctx, 300, "Alarm not set. An alarm may already be in progress, please trigger it and retry.")
+
+@bot.command()
+async def countdown(ctx):
+    global seconds
+    if (seconds != None and seconds > 0):
+        print(f"In countdown with {seconds} seconds left.")
+        minutes, _ = divmod(seconds, 60)
+        hours, minutes = divmod(minutes, 60)
+
+        hours_output = "hours" if hours > 1 else "hour" if hours == 1 else ""
+        minutes_output = "minutes" if minutes > 1 else "minute" if minutes == 1 else ""
+        
+        output = "Alarm will trigger in "
+        if (hours_output != ""):
+            output += str(hours) + " " + hours_output
+            if (minutes_output != ""):
+                output += "and "
+        if (minutes_output != ""):
+            output += str(minutes) + " "+ minutes_output
+
+        await ctx.send(output+".")
+    else:
+        await sendError(ctx, 300, "Alarm not set. Please set one and retry to see a countdown.")
 
 bot.run(TOKEN)

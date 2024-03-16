@@ -1,16 +1,12 @@
-# Thanks to <a href="https://www.flaticon.com/free-icons/time" title="time icons">Time icons created by Freepik - Flaticon</a> for the hourglass icon
-import os
-
-import discord
-import re
 import asyncio
-import pytz
+import os
+import re
+from datetime import datetime, timedelta, timezone
 from multiprocessing import Process
 
+import discord
 from discord.ext import commands
 from dotenv import load_dotenv
-from datetime import datetime, timezone, timedelta
-
 
 load_dotenv()
 TOKEN = os.getenv('DISCORD_TOKEN')
@@ -39,9 +35,17 @@ async def on_ready():
 async def ping_everyone(ctx):
     global switched_on 
     global alarm_running
-    if (switched_on):
+
+    if (switched_on and alarm_running):
         alarm_running = False
         await ctx.send("@everyone")
+    elif (not switched_on):
+        alarm_running = True
+        await ctx.send(":warning:  Alarm has expired. Switching toggle back on.")
+    elif (not alarm_running):
+        await ctx.send(":information_source:  No active alarm found to trigger.")
+    else:
+        await ctx.send(":information_source:  No alarm set or switched on. Please set an alarm and try again.")
 
 async def startCountdown(ctx):
     global seconds
@@ -56,8 +60,8 @@ async def setAlarm(ctx, seconds_to_sleep):
     global seconds
 
     seconds = seconds_to_sleep
-
     alarm_running = True
+
     task = asyncio.ensure_future(asyncio.sleep(seconds_to_sleep))
     
     await countdown(ctx)
@@ -68,8 +72,7 @@ async def setAlarm(ctx, seconds_to_sleep):
     
     if not task.cancelled():
         await ping_everyone(ctx)
-    else:
-        await ctx.send(f":information_source: Alarm expired.")
+
     alarm_running = False
     switched_on = True
 
@@ -80,13 +83,21 @@ def inputToDateTime(time):
 def validateTimeInput(input):
     return re.search("^([0-9]|0[0-9]|1[0-9]|2[0-3]):[0-5][0-9]$", input).group(0)
 
+def returnUserTime():
+    global user_time_offset_from_utc
+    user_time = datetime.now(timezone.utc) + timedelta(seconds = user_time_offset_from_utc)
+    return str(user_time.time())[0:5]
+
 @bot.command()
 async def time(ctx, command = None, time = None):
     global user_time_offset_from_utc
     global alarm_running
     if (not alarm_running):
-        if (command == None or time == None):
-            await ctx.send(f":warning: Time not set. Please use the following 24-hour format and try again: \"/time set HH:MM\"")
+        if (command == None and time == None):
+            await ctx.send(f":information_source:  Your time is set to {returnUserTime()}")
+        elif (command == None or time == None):
+            await ctx.send(f":warning:  Time not set. Please use the following 24-hour format and try again: **/time set HH:MM**")
+            await ctx.send(f":information_source:  Your time is set to {returnUserTime()}")
         elif (command.lower() == "set"):
             valid_time_found = validateTimeInput(time)
             if (valid_time_found):
@@ -95,20 +106,20 @@ async def time(ctx, command = None, time = None):
                 # If the offset is more than 12 hours in the future, we need to set a negative offset
                 if user_time_offset_from_utc > 43200:
                     user_time_offset_from_utc = -(86400 - user_time_offset_from_utc)
-                await ctx.send(f":information_source: Your time has been successfully updated to {valid_time_found}.")
+                await ctx.send(f":information_source:  Your time has been successfully updated to {valid_time_found}.")
             else:
-                await ctx.send(f":warning: Time not set. Please use the following 24-hour format and try again: \"/time set HH:MM\"")
+                await ctx.send(f":warning:  Time not set. Please use the following 24-hour format and try again: **/time set HH:MM**")
     else:
-        await ctx.send(f":warning: An alarm is already in progress, please cancel it first to configure your time.")
+        await ctx.send(f":warning:  An alarm is already in progress, please cancel it first to configure your time.")
 
 @bot.command()
 async def toggle(ctx):
     global switched_on
     switched_on = False if (switched_on) else True
     if (switched_on):
-        await ctx.send(":information_source: Alarm toggled on.")
+        await ctx.send(":information_source:  Alarm toggled on.")
     else:
-        await ctx.send(":information_source: Alarm toggled off.")
+        await ctx.send(":information_source:  Alarm toggled off.")
 
 @bot.command()
 async def alarm(ctx, command = None, time = None):
@@ -116,12 +127,11 @@ async def alarm(ctx, command = None, time = None):
     global user_time_offset_from_utc
     global task
     if (command == time == None):
-        alarm_running = False
         try:
             task.cancel()
             await ping_everyone(ctx)
         except:
-            await ctx.send(":information_source: No active alarm found to trigger.")
+            await ctx.send(":information_source:  No active alarm found to trigger.")
     else:
         if (command.lower() == "set" and not alarm_running):
             valid_time_found = validateTimeInput(time)
@@ -132,59 +142,70 @@ async def alarm(ctx, command = None, time = None):
 
                 if aware_time < current_offset_time:
                     aware_time += timedelta(days=1)
-
+                
+                # We set an alarm by calculating the difference in seconds rather than waiting for a single "time"
                 await setAlarm(ctx, (aware_time - current_offset_time).seconds)
             else:
-                await ctx.send(f":warning: Alarm not set. Please use the following 24-hour format and try again: \"/alarm set HH:MM\"")
+                await ctx.send(f":warning:  Alarm not set. Please use the following 24-hour format and try again: **/alarm set HH:MM**")
         else:
-            await ctx.send(f":warning: Alarm not set. An alarm may already be in progress, please trigger it with \"/alarm and retry using \"/alarm set HH:MM\".")
+            await ctx.send(f":warning:  Alarm not set. An alarm may already be in progress, please trigger it with **/alarm** and retry using **/alarm set HH:MM**")
 
 @bot.command()
 async def countdown(ctx):
     global seconds
-    if (seconds != None and seconds > 0):
-        minutes, sec = divmod(seconds, 60)
-        hours, minutes = divmod(minutes, 60)
+    global alarm_running
+    if (alarm_running):
+        if (seconds != None and seconds > 0):
+            minutes, sec = divmod(seconds, 60)
+            hours, minutes = divmod(minutes, 60)
 
-        hours_output = "hours" if hours > 1 else "hour" if hours == 1 else ""
-        minutes_output = "minutes" if minutes > 1 else "minute" if minutes == 1 else ""
-        seconds_output = "seconds" if sec > 1 else "second" if sec == 1 else ""
-        
-        output = "Alarm will trigger in "
-        if (hours_output != ""):
-            output += str(hours) + " " + hours_output
+            hours_output = "hours" if hours > 1 else "hour" if hours == 1 else ""
+            minutes_output = "minutes" if minutes > 1 else "minute" if minutes == 1 else ""
+            seconds_output = "seconds" if sec > 1 else "second" if sec == 1 else ""
+            
+            output = "Alarm will trigger in "
+            if (hours_output != ""):
+                output += str(hours) + " " + hours_output
+                if (minutes_output != "" and seconds_output == ""):
+                    output += " and "
+                else:
+                    output += ", "
             if (minutes_output != ""):
-                output += " and "
-        if (minutes_output != ""):
-            output += str(minutes) + " " + minutes_output
+                output += str(minutes) + " " + minutes_output
+                if (seconds_output != ""):
+                    output += " and "
             if (seconds_output != ""):
-                output += " and "
-        if (seconds_output != ""):
-            output += str(sec) + " " + seconds_output
+                output += str(sec) + " " + seconds_output
 
-        await ctx.send(":information_source: "+output+".")
+            await ctx.send(":information_source:  "+output+".")
+        else:
+            await ctx.send(f":warning:  Alarm not set. Please set one and retry to see a countdown.")
     else:
-        await ctx.send(f":warning: Alarm not set. Please set one and retry to see a countdown.")
+        await ctx.send(":information_source:  No alarm set or switched on. Please set an alarm and try again.")
 
 @bot.command()
 async def help(ctx):
-    output = """
-    :scroll: :scroll: Command List :scroll: :scroll:
+    output = f"""
+    :scroll: :scroll: **Command List** :scroll: :scroll:
 
-    :bell: **/alarm** ==> Trigger the alarm (if it's running), immediately
+    :bell:  **/alarm** ==> Trigger the alarm (if it's running), immediately
 
-    :alarm_clock: **/alarm set HH:MM** ==> Set an alarm given a 24 hour time, for example /alarm set 10:00
+    :alarm_clock:  **/alarm set HH:MM** ==> Set an alarm given a 24 hour time, for example **/alarm set 10:00**
 
-    :electric_plug: **/toggle** ==> Switch the alarm on or off
+    :electric_plug:  **/toggle** ==> Switch the alarm on or off
 
-    :stopwatch: **/countdown** ==> See how long until the alarm goes off
+    :stopwatch:  **/countdown** ==> See how long until the alarm goes off
     
-    :world_map: **/time set HH:MM** ==> Set your current time so the bot can adjust timezones, otherwise it defaults to UTC
-    
-    :question: **/help** ==> To see these commands again
+    :clock:  **/time** ==> See your current time (according to the bot it's **{returnUserTime()}** where you are!)
 
+    :world_map:  **/time set HH:MM** ==> Set your current time so the bot can adjust timezones: it defaults to UTC otherwise
+    
+    :question:  **/help** ==> See this message again
+
+    Thanks to Time icons created by Freepik - Flaticon for the hourglass icon! 
+    Find their icons here: https://www.flaticon.com/free-icons/time
     """
-    
+
     await ctx.send(output)
 
 bot.run(TOKEN)

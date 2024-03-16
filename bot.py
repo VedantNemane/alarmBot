@@ -40,12 +40,9 @@ async def ping_everyone(ctx):
         alarm_running = False
         await ctx.send("@everyone")
     elif (not switched_on):
-        alarm_running = True
-        await ctx.send(":warning:  Alarm has expired. Switching toggle back on.")
+        await ctx.send(":warning:  Alarm was toggled off. Please switch toggle to trigger.")
     elif (not alarm_running):
         await ctx.send(":information_source:  No active alarm found to trigger.")
-    else:
-        await ctx.send(":information_source:  No alarm set or switched on. Please set an alarm and try again.")
 
 async def startCountdown(ctx):
     global seconds
@@ -81,7 +78,11 @@ def inputToDateTime(time):
     return datetime_object
 
 def validateTimeInput(input):
-    return re.search("^([0-9]|0[0-9]|1[0-9]|2[0-3]):[0-5][0-9]$", input).group(0)
+    try:
+        x = re.search("^([0-9]|0[0-9]|1[0-9]|2[0-3]):[0-5][0-9]$", input).group(0)
+        return x
+    except:
+        return None
 
 def returnUserTime():
     global user_time_offset_from_utc
@@ -132,6 +133,8 @@ async def alarm(ctx, command = None, time = None):
             await ping_everyone(ctx)
         except:
             await ctx.send(":information_source:  No active alarm found to trigger.")
+    elif (command == None or time == None):
+        await ctx.send(f":warning:  Alarm not set. Please use the following 24-hour format and try again: **/alarm set HH:MM**")
     else:
         if (command.lower() == "set" and not alarm_running):
             valid_time_found = validateTimeInput(time)
@@ -166,9 +169,9 @@ async def countdown(ctx):
             output = "Alarm will trigger in "
             if (hours_output != ""):
                 output += str(hours) + " " + hours_output
-                if (minutes_output != "" and seconds_output == ""):
+                if (minutes_output != "" and seconds_output == "") or (minutes_output == "" and seconds_output != ""):
                     output += " and "
-                else:
+                elif(minutes_output != "" and seconds_output != ""):
                     output += ", "
             if (minutes_output != ""):
                 output += str(minutes) + " " + minutes_output
@@ -198,7 +201,7 @@ async def help(ctx):
     
     :clock:  **/time** ==> See your current time (according to the bot it's **{returnUserTime()}** where you are!)
 
-    :world_map:  **/time set HH:MM** ==> Set your current time so the bot can adjust timezones: it defaults to UTC otherwise
+    :world_map:  **/time set HH:MM** ==> Set your current time if :point_up_2: isn't correct! This defaults to UTC
     
     :question:  **/help** ==> See this message again
 

@@ -25,6 +25,7 @@ switched_on = True
 alarm_running = False
 # The task to hold the timer for the actual alarm
 task = None
+
 # The task to hold the countdown for the alarm
 countdown_task = None
 # The duration we'll be counting down from
@@ -49,6 +50,8 @@ async def ping_everyone(ctx):
         await ctx.send(":warning:  Alarm tried to trigger but was toggled off.")
     elif (not alarm_running):
         await ctx.send(":information_source:  No active alarm found to trigger.")
+
+        
 
 async def startCountdown(ctx):
     global seconds
@@ -91,6 +94,11 @@ def validateTimeInput(input):
         return re.search("^([0-9]|0[0-9]|1[0-9]|2[0-3]):[0-5][0-9]$", input).group(0)
     except:
         return None
+
+def returnUserTime():
+    global user_time_offset_from_utc
+    user_time = datetime.now(timezone.utc) + timedelta(seconds = user_time_offset_from_utc)
+    return str(user_time.time())[0:5]
 
 def returnUserTime():
     global user_time_offset_from_utc
@@ -145,6 +153,7 @@ async def alarm(ctx, command = None, time = None):
             await ctx.send(":information_source:  No active alarm found to trigger.")
     elif (command == None or time == None):
         await ctx.send(f":warning:  Alarm not set. Please use the following 24-hour format and try again: **/alarm set HH:MM**")
+
     else:
         if (command.lower() == "set" and not alarm_running):
             valid_time_found = validateTimeInput(time)
@@ -218,6 +227,7 @@ async def help(ctx):
     :question:  **/help** ==> See this message again
 
     Thanks to Time icons created by Freepik - Flaticon for the profile hourglass icon! 
+
     Find their icons here: https://www.flaticon.com/free-icons/time
     """
 

@@ -25,6 +25,9 @@ switched_on = True
 alarm_running = False
 # The task to hold the timer for the actual alarm
 task = None
+
+# The task to hold the countdown for the alarm
+countdown_task = None
 # The duration we'll be counting down from
 seconds = None
 
@@ -35,17 +38,20 @@ async def on_ready():
 async def ping_everyone(ctx):
     global switched_on 
     global alarm_running
+    global seconds
 
     if (switched_on and alarm_running):
         alarm_running = False
+        seconds = 0
         await ctx.send("@everyone")
     elif (not switched_on):
-        alarm_running = True
-        await ctx.send(":warning:  Alarm has expired. Switching toggle back on.")
+        if seconds == 0:
+            alarm_running = False
+        await ctx.send(":warning:  Alarm tried to trigger but was toggled off.")
     elif (not alarm_running):
         await ctx.send(":information_source:  No active alarm found to trigger.")
-    else:
-        await ctx.send(":information_source:  No alarm set or switched on. Please set an alarm and try again.")
+
+        
 
 async def startCountdown(ctx):
     global seconds
@@ -58,30 +64,41 @@ async def setAlarm(ctx, seconds_to_sleep):
     global switched_on
     global task
     global seconds
+    global countdown_task
 
     seconds = seconds_to_sleep
     alarm_running = True
 
     task = asyncio.ensure_future(asyncio.sleep(seconds_to_sleep))
+    countdown_task = asyncio.ensure_future(startCountdown(ctx))
     
     await countdown(ctx)
     await asyncio.gather(
         task,
-        startCountdown(ctx)
+        countdown_task
     )
     
     if not task.cancelled():
+        try:
+            countdown_task.cancel()
+        except:
+            pass
         await ping_everyone(ctx)
-
-    alarm_running = False
-    switched_on = True
 
 def inputToDateTime(time):
     datetime_object = datetime.strptime(f"{datetime.now(timezone.utc).date()} {time}:00", '%Y-%m-%d %H:%M:%S')
     return datetime_object
 
 def validateTimeInput(input):
-    return re.search("^([0-9]|0[0-9]|1[0-9]|2[0-3]):[0-5][0-9]$", input).group(0)
+    try:
+        return re.search("^([0-9]|0[0-9]|1[0-9]|2[0-3]):[0-5][0-9]$", input).group(0)
+    except:
+        return None
+
+def returnUserTime():
+    global user_time_offset_from_utc
+    user_time = datetime.now(timezone.utc) + timedelta(seconds = user_time_offset_from_utc)
+    return str(user_time.time())[0:5]
 
 def returnUserTime():
     global user_time_offset_from_utc
@@ -92,13 +109,13 @@ def returnUserTime():
 async def time(ctx, command = None, time = None):
     global user_time_offset_from_utc
     global alarm_running
-    if (not alarm_running):
-        if (command == None and time == None):
-            await ctx.send(f":information_source:  Your time is set to {returnUserTime()}")
-        elif (command == None or time == None):
-            await ctx.send(f":warning:  Time not set. Please use the following 24-hour format and try again: **/time set HH:MM**")
-            await ctx.send(f":information_source:  Your time is set to {returnUserTime()}")
-        elif (command.lower() == "set"):
+    if (command == None and time == None):
+        await ctx.send(f":information_source:  Your time is set to {returnUserTime()}")
+    elif (command == None or time == None):
+        await ctx.send(f":warning:  Time not set. Please use the following 24-hour format and try again: **/time set HH:MM**")
+        await ctx.send(f":information_source:  Your time is set to {returnUserTime()}")
+    elif (not alarm_running):
+        if (command.lower() == "set"):
             valid_time_found = validateTimeInput(time)
             if (valid_time_found):
                 user_utc_time = inputToDateTime(valid_time_found).replace(tzinfo=timezone.utc)
@@ -126,12 +143,17 @@ async def alarm(ctx, command = None, time = None):
     global alarm_running
     global user_time_offset_from_utc
     global task
+    global countdown_task
     if (command == time == None):
         try:
             task.cancel()
+            countdown_task.cancel()
             await ping_everyone(ctx)
         except:
             await ctx.send(":information_source:  No active alarm found to trigger.")
+    elif (command == None or time == None):
+        await ctx.send(f":warning:  Alarm not set. Please use the following 24-hour format and try again: **/alarm set HH:MM**")
+
     else:
         if (command.lower() == "set" and not alarm_running):
             valid_time_found = validateTimeInput(time)
@@ -139,7 +161,7 @@ async def alarm(ctx, command = None, time = None):
 
                 aware_time = inputToDateTime(valid_time_found).replace(tzinfo=timezone.utc)
                 current_offset_time = datetime.now(timezone.utc) + timedelta(seconds=user_time_offset_from_utc)
-
+                # If alarm time is less than the time now, schedule it for the next day
                 if aware_time < current_offset_time:
                     aware_time += timedelta(days=1)
                 
@@ -166,9 +188,9 @@ async def countdown(ctx):
             output = "Alarm will trigger in "
             if (hours_output != ""):
                 output += str(hours) + " " + hours_output
-                if (minutes_output != "" and seconds_output == ""):
+                if (minutes_output != "" and seconds_output == "") or (minutes_output == "" and seconds_output != ""):
                     output += " and "
-                else:
+                elif(minutes_output != "" and seconds_output != ""):
                     output += ", "
             if (minutes_output != ""):
                 output += str(minutes) + " " + minutes_output
@@ -198,14 +220,44 @@ async def help(ctx):
     
     :clock:  **/time** ==> See your current time (according to the bot it's **{returnUserTime()}** where you are!)
 
-    :world_map:  **/time set HH:MM** ==> Set your current time so the bot can adjust timezones: it defaults to UTC otherwise
+    :world_map:  **/time set HH:MM** ==> Set your current time if :point_up_2: isn't correct- this defaults to UTC
+
+    :arrows_counterclockwise: **/reset** ==> Reset these settings
     
     :question:  **/help** ==> See this message again
 
-    Thanks to Time icons created by Freepik - Flaticon for the hourglass icon! 
+    Thanks to Time icons created by Freepik - Flaticon for the profile hourglass icon! 
+
     Find their icons here: https://www.flaticon.com/free-icons/time
     """
 
     await ctx.send(output)
+
+@bot.command()
+async def reset(ctx):
+    global user_time_offset_from_utc
+    global switched_on
+    global alarm_running
+    global task
+    global seconds
+    global countdown_task
+
+    try:
+        task.cancel()
+    except:
+        pass
+    try:
+        countdown_task.cancel()
+    except:
+        pass
+
+    user_time_offset_from_utc = 0
+    switched_on = True
+    alarm_running = False
+    task = None
+    countdown_task = None
+    seconds = None
+
+    await ctx.send(":information_source:  All settings reverted!")
 
 bot.run(TOKEN)
